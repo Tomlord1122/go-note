@@ -1,0 +1,1 @@
+ALTER TABLE notes ALTER COLUMN embedding TYPE VECTOR(768);
