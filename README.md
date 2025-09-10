@@ -142,16 +142,5 @@ make db-stop        # Stop Supabase local
 make clean          # Clean build artifacts
 ```
 
-## 🌟 Architecture Highlights
-
-- **Clean Architecture** - Separation of concerns with clear layers
-- **Type Safety** - SQLC generates type-safe database queries
-- **Dependency Injection** - Services injected through constructors
-- **Graceful Shutdown** - Proper server shutdown handling
-- **Integration Testing** - Real database tests with testcontainers
-- **Vector Search** - pgvector for efficient similarity search
-- **Row-Level Security** - Database-level access control
-
-
 
 
