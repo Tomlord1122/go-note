@@ -72,6 +72,11 @@ func OptionalAuthMiddleware() gin.HandlerFunc {
 	}
 }
 
+// ValidateJWTToken validates a Supabase JWT token (exported for reuse)
+func ValidateJWTToken(tokenString string) (*UserClaims, error) {
+	return validateJWT(tokenString)
+}
+
 // validateJWT validates a Supabase JWT token
 func validateJWT(tokenString string) (*UserClaims, error) {
 	// Get the JWT secret from environment

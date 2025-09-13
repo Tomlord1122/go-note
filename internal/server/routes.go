@@ -54,7 +54,7 @@ func (s *Server) RegisterRoutes() http.Handler {
 		authRoutes.GET("/callback", oauthHandler.ProviderCallback)
 		authRoutes.POST("/refresh", oauthHandler.RefreshToken)
 		authRoutes.POST("/logout", oauthHandler.Logout)
-		authRoutes.GET("/user", auth.OptionalAuthMiddleware(), oauthHandler.GetUser)
+		authRoutes.GET("/user", auth.AuthMiddleware(), oauthHandler.GetUser)
 	}
 
 	// API routes

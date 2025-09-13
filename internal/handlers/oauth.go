@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"strings"
 
 	"go-note/internal/auth"
 	"go-note/internal/services"
@@ -16,20 +15,13 @@ import (
 
 // OAuthHandler handles OAuth-related HTTP requests
 type OAuthHandler struct {
-	supabaseClient *auth.SupabaseClient
-	userService    *services.UserService
+	userService *services.UserService
 }
 
 // NewOAuthHandler creates a new OAuth handler
 func NewOAuthHandler(db *pgxpool.Pool) (*OAuthHandler, error) {
-	client, err := auth.NewSupabaseClient()
-	if err != nil {
-		return nil, err
-	}
-
 	return &OAuthHandler{
-		supabaseClient: client,
-		userService:    services.NewUserService(db),
+		userService: services.NewUserService(db),
 	}, nil
 }
 
@@ -93,16 +85,18 @@ func (h *OAuthHandler) GoogleCallback(c *gin.Context) {
 	}
 
 	// Parse the JWT token to extract user information
-	claims, err := auth.ParseJWTClaims(accessToken)
+	claims, err := auth.ValidateJWTToken(accessToken)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid token format: " + err.Error()})
 		return
 	}
 
 	userResponse := &User{
-		ID:       claims.Sub,
-		Email:    claims.Email,
-		Metadata: claims.UserMetadata,
+		ID:    claims.Sub,
+		Email: claims.Email,
+		Metadata: map[string]interface{}{
+			"role": claims.Role,
+		},
 	}
 
 	c.JSON(http.StatusOK, AuthResponse{
@@ -112,24 +106,61 @@ func (h *OAuthHandler) GoogleCallback(c *gin.Context) {
 	})
 }
 
+// RefreshTokenRequest represents the request body for token refresh
+type RefreshTokenRequest struct {
+	RefreshToken string `json:"refresh_token" binding:"required"`
+}
+
+// RefreshTokenResponse represents the response from token refresh
+type RefreshTokenResponse struct {
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"refresh_token,omitempty"`
+	ExpiresIn    int    `json:"expires_in"`
+	TokenType    string `json:"token_type"`
+}
+
 // RefreshToken handles POST /auth/refresh
-// Refreshes an expired access token using the refresh token
+// Self-managed JWT tokens (no ANON_KEY required!)
 func (h *OAuthHandler) RefreshToken(c *gin.Context) {
-	var req struct {
-		RefreshToken string `json:"refresh_token" binding:"required"`
-	}
+	var req RefreshTokenRequest
 
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Refresh token is required"})
 		return
 	}
 
-	// Use the refresh token to get a new access token
-	// This would typically involve a call to Supabase's refresh endpoint
-	c.JSON(http.StatusNotImplemented, gin.H{
-		"error":   "Refresh token functionality not implemented yet",
-		"message": "Please re-authenticate using the login flow",
-	})
+	// Initialize token manager
+	tokenManager := auth.NewTokenManager()
+
+	// Validate refresh token
+	refreshClaims, err := tokenManager.ValidateRefreshToken(req.RefreshToken)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error":   "Invalid refresh token",
+			"message": "Please re-authenticate using the login flow",
+		})
+		return
+	}
+
+	// Get user information from database to generate new tokens
+	// You might want to fetch fresh user data here
+	userID := refreshClaims.UserID
+
+	// For now, we'll use basic info. In production, you might want to
+	// fetch fresh user data from database to ensure user still exists and is active
+	userEmail := ""             // Fetch from DB
+	userRole := "authenticated" // Fetch from DB or use default
+
+	// Generate new token pair
+	tokenPair, err := tokenManager.GenerateTokenPair(userID, userEmail, userRole)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to generate new tokens",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, tokenPair)
 }
 
 // Logout handles POST /auth/logout
@@ -142,36 +173,29 @@ func (h *OAuthHandler) Logout(c *gin.Context) {
 
 // GetUser handles GET /auth/user
 // Gets the current user's information from JWT token and creates profile if needed
+// Note: AuthMiddleware already validates the token, so we can use the context data
 func (h *OAuthHandler) GetUser(c *gin.Context) {
-	// Get token from Authorization header
-	authHeader := c.GetHeader("Authorization")
-	if authHeader == "" {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization header required"})
+	// Get user info from context (set by AuthMiddleware)
+	userID, exists := auth.GetUserID(c)
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User ID not found in context"})
 		return
 	}
 
-	// Extract token from "Bearer <token>"
-	tokenString := strings.TrimPrefix(authHeader, "Bearer ")
-	if tokenString == authHeader {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid authorization header format"})
-		return
-	}
+	userEmail, _ := auth.GetUserEmail(c)
+	userRole := c.GetString("user_role")
 
-	// Parse JWT token to extract user information
-	claims, err := auth.ParseJWTClaims(tokenString)
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token format: " + err.Error()})
-		return
-	}
-
-	// Check if token is expired
-	if auth.IsTokenExpired(claims) {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Token expired"})
-		return
+	// Convert context data to JWTClaims for service compatibility
+	jwtClaims := &auth.JWTClaims{
+		Sub:          userID,
+		Email:        userEmail,
+		Role:         userRole,
+		UserMetadata: make(map[string]interface{}),
+		AppMetadata:  make(map[string]interface{}),
 	}
 
 	// Create or update user profile in database
-	profile, err := h.userService.CreateOrUpdateUserFromJWT(c.Request.Context(), claims)
+	profile, err := h.userService.CreateOrUpdateUserFromJWT(c.Request.Context(), jwtClaims)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create user profile: " + err.Error()})
 		return
@@ -179,12 +203,10 @@ func (h *OAuthHandler) GetUser(c *gin.Context) {
 
 	// Return user information (without sensitive data)
 	userResponse := &User{
-		ID:    claims.Sub,
-		Email: claims.Email,
-		// Don't include full metadata for security
+		ID:    userID,
+		Email: userEmail,
 		Metadata: map[string]interface{}{
-			"full_name": claims.UserMetadata["full_name"],
-			"picture":   claims.UserMetadata["picture"],
+			"role": userRole,
 		},
 	}
 
