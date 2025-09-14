@@ -16,7 +16,6 @@ type Note struct {
 	Content   string             `json:"content"`
 	Embedding pgvector.Vector    `json:"embedding"`
 	Tags      []string           `json:"tags"`
-	IsPublic  pgtype.Bool        `json:"is_public"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }

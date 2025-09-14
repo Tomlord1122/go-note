@@ -77,30 +77,23 @@ func (s *Server) RegisterRoutes() http.Handler {
 			}
 		}
 
-		// Notes routes
-		notes := api.Group("/notes")
+		// Notes routes (all protected, auth required)
+		notes := api.Group("/notes", auth.AuthMiddleware())
 		{
-			// Public notes routes (no auth required)
-			notes.GET("/public", notesHandler.GetPublicNotes)
-			notes.GET("/:id", auth.OptionalAuthMiddleware(), notesHandler.GetNote)
+			notes.GET("", notesHandler.GetUserNotes)
+			notes.POST("", notesHandler.CreateNote)
+			notes.GET("/:id", notesHandler.GetNote)
+			notes.PUT("/:id", notesHandler.UpdateNote)
+			notes.DELETE("/:id", notesHandler.DeleteNote)
 
-			// Protected notes routes (auth required)
-			protected := notes.Group("", auth.AuthMiddleware())
+			// Semantic search endpoint
+			notes.POST("/search", notesHandler.SearchNotesByQuery)
+
+			// Flashcard generation endpoints
+			flashcard := notes.Group("/flashcard")
 			{
-				protected.GET("", notesHandler.GetUserNotes)
-				protected.POST("", notesHandler.CreateNote)
-				protected.PUT("/:id", notesHandler.UpdateNote)
-				protected.DELETE("/:id", notesHandler.DeleteNote)
-
-				// Semantic search endpoint
-				protected.POST("/search", notesHandler.SearchNotesByQuery)
-
-				// Flashcard generation endpoints
-				flashcard := protected.Group("/flashcard")
-				{
-					flashcard.POST("/query", notesHandler.StreamFlashcardFromQuery)
-					flashcard.POST("/notes", notesHandler.StreamFlashcardFromNotes)
-				}
+				flashcard.POST("/query", notesHandler.StreamFlashcardFromQuery)
+				flashcard.POST("/notes", notesHandler.StreamFlashcardFromNotes)
 			}
 		}
 	}

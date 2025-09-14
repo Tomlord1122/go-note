@@ -13,9 +13,9 @@ import (
 )
 
 const createNote = `-- name: CreateNote :one
-INSERT INTO notes (user_id, title, content, embedding, tags, is_public)
-VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, user_id, title, content, tags, is_public, created_at, updated_at
+INSERT INTO notes (user_id, title, content, embedding, tags)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id, user_id, title, content, tags, created_at, updated_at
 `
 
 type CreateNoteParams struct {
@@ -24,7 +24,6 @@ type CreateNoteParams struct {
 	Content   string          `json:"content"`
 	Embedding pgvector.Vector `json:"embedding"`
 	Tags      []string        `json:"tags"`
-	IsPublic  pgtype.Bool     `json:"is_public"`
 }
 
 type CreateNoteRow struct {
@@ -33,7 +32,6 @@ type CreateNoteRow struct {
 	Title     string             `json:"title"`
 	Content   string             `json:"content"`
 	Tags      []string           `json:"tags"`
-	IsPublic  pgtype.Bool        `json:"is_public"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
@@ -45,7 +43,6 @@ func (q *Queries) CreateNote(ctx context.Context, arg CreateNoteParams) (CreateN
 		arg.Content,
 		arg.Embedding,
 		arg.Tags,
-		arg.IsPublic,
 	)
 	var i CreateNoteRow
 	err := row.Scan(
@@ -54,7 +51,6 @@ func (q *Queries) CreateNote(ctx context.Context, arg CreateNoteParams) (CreateN
 		&i.Title,
 		&i.Content,
 		&i.Tags,
-		&i.IsPublic,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -77,7 +73,7 @@ func (q *Queries) DeleteNote(ctx context.Context, arg DeleteNoteParams) error {
 }
 
 const getNote = `-- name: GetNote :one
-SELECT id, user_id, title, content, tags, is_public, created_at, updated_at
+SELECT id, user_id, title, content, tags, created_at, updated_at
 FROM notes
 WHERE id = $1
 `
@@ -88,7 +84,6 @@ type GetNoteRow struct {
 	Title     string             `json:"title"`
 	Content   string             `json:"content"`
 	Tags      []string           `json:"tags"`
-	IsPublic  pgtype.Bool        `json:"is_public"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
@@ -102,7 +97,6 @@ func (q *Queries) GetNote(ctx context.Context, id pgtype.UUID) (GetNoteRow, erro
 		&i.Title,
 		&i.Content,
 		&i.Tags,
-		&i.IsPublic,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -112,7 +106,7 @@ func (q *Queries) GetNote(ctx context.Context, id pgtype.UUID) (GetNoteRow, erro
 const getNoteForFlashcard = `-- name: GetNoteForFlashcard :one
 SELECT id, user_id, title, content, tags, created_at
 FROM notes
-WHERE id = $1 AND (user_id = $2 OR is_public = true)
+WHERE id = $1 AND user_id = $2
 LIMIT 1
 `
 
@@ -144,61 +138,8 @@ func (q *Queries) GetNoteForFlashcard(ctx context.Context, arg GetNoteForFlashca
 	return i, err
 }
 
-const getPublicNotes = `-- name: GetPublicNotes :many
-SELECT id, user_id, title, content, tags, is_public, created_at, updated_at
-FROM notes
-WHERE is_public = true
-ORDER BY created_at DESC
-LIMIT $1 OFFSET $2
-`
-
-type GetPublicNotesParams struct {
-	Limit  int32 `json:"limit"`
-	Offset int32 `json:"offset"`
-}
-
-type GetPublicNotesRow struct {
-	ID        pgtype.UUID        `json:"id"`
-	UserID    pgtype.UUID        `json:"user_id"`
-	Title     string             `json:"title"`
-	Content   string             `json:"content"`
-	Tags      []string           `json:"tags"`
-	IsPublic  pgtype.Bool        `json:"is_public"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
-}
-
-func (q *Queries) GetPublicNotes(ctx context.Context, arg GetPublicNotesParams) ([]GetPublicNotesRow, error) {
-	rows, err := q.db.Query(ctx, getPublicNotes, arg.Limit, arg.Offset)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []GetPublicNotesRow{}
-	for rows.Next() {
-		var i GetPublicNotesRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.UserID,
-			&i.Title,
-			&i.Content,
-			&i.Tags,
-			&i.IsPublic,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const getUserNotes = `-- name: GetUserNotes :many
-SELECT id, user_id, title, content, tags, is_public, created_at, updated_at
+SELECT id, user_id, title, content, tags, created_at, updated_at
 FROM notes
 WHERE user_id = $1
 ORDER BY created_at DESC
@@ -217,7 +158,6 @@ type GetUserNotesRow struct {
 	Title     string             `json:"title"`
 	Content   string             `json:"content"`
 	Tags      []string           `json:"tags"`
-	IsPublic  pgtype.Bool        `json:"is_public"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
@@ -237,7 +177,6 @@ func (q *Queries) GetUserNotes(ctx context.Context, arg GetUserNotesParams) ([]G
 			&i.Title,
 			&i.Content,
 			&i.Tags,
-			&i.IsPublic,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -258,13 +197,12 @@ SELECT
     n.title,
     n.content,
     n.tags,
-    n.is_public,
     n.created_at,
     n.updated_at,
     (1 - (n.embedding <=> $1::vector))::float AS similarity
 FROM notes n
 WHERE 
-    (n.user_id = $2 OR n.is_public = true)
+    n.user_id = $2
     AND n.embedding IS NOT NULL
     AND 1 - (n.embedding <=> $1::vector) > $3::float
 ORDER BY n.embedding <=> $1::vector
@@ -284,7 +222,6 @@ type SearchNotesBySimilarityRow struct {
 	Title      string             `json:"title"`
 	Content    string             `json:"content"`
 	Tags       []string           `json:"tags"`
-	IsPublic   pgtype.Bool        `json:"is_public"`
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
 	Similarity float64            `json:"similarity"`
@@ -310,7 +247,6 @@ func (q *Queries) SearchNotesBySimilarity(ctx context.Context, arg SearchNotesBy
 			&i.Title,
 			&i.Content,
 			&i.Tags,
-			&i.IsPublic,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.Similarity,
@@ -332,10 +268,9 @@ SET
     content = COALESCE($3, content),
     embedding = COALESCE($4, embedding),
     tags = COALESCE($5, tags),
-    is_public = COALESCE($6, is_public),
     updated_at = NOW()
-WHERE id = $1 AND user_id = $7
-RETURNING id, user_id, title, content, tags, is_public, created_at, updated_at
+WHERE id = $1 AND user_id = $6
+RETURNING id, user_id, title, content, tags, created_at, updated_at
 `
 
 type UpdateNoteParams struct {
@@ -344,7 +279,6 @@ type UpdateNoteParams struct {
 	Content   string          `json:"content"`
 	Embedding pgvector.Vector `json:"embedding"`
 	Tags      []string        `json:"tags"`
-	IsPublic  pgtype.Bool     `json:"is_public"`
 	UserID    pgtype.UUID     `json:"user_id"`
 }
 
@@ -354,7 +288,6 @@ type UpdateNoteRow struct {
 	Title     string             `json:"title"`
 	Content   string             `json:"content"`
 	Tags      []string           `json:"tags"`
-	IsPublic  pgtype.Bool        `json:"is_public"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
@@ -366,7 +299,6 @@ func (q *Queries) UpdateNote(ctx context.Context, arg UpdateNoteParams) (UpdateN
 		arg.Content,
 		arg.Embedding,
 		arg.Tags,
-		arg.IsPublic,
 		arg.UserID,
 	)
 	var i UpdateNoteRow
@@ -376,7 +308,6 @@ func (q *Queries) UpdateNote(ctx context.Context, arg UpdateNoteParams) (UpdateN
 		&i.Title,
 		&i.Content,
 		&i.Tags,
-		&i.IsPublic,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

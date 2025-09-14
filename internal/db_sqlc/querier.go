@@ -18,7 +18,6 @@ type Querier interface {
 	DeleteUserProfile(ctx context.Context, id pgtype.UUID) error
 	GetNote(ctx context.Context, id pgtype.UUID) (GetNoteRow, error)
 	GetNoteForFlashcard(ctx context.Context, arg GetNoteForFlashcardParams) (GetNoteForFlashcardRow, error)
-	GetPublicNotes(ctx context.Context, arg GetPublicNotesParams) ([]GetPublicNotesRow, error)
 	GetUserNotes(ctx context.Context, arg GetUserNotesParams) ([]GetUserNotesRow, error)
 	GetUserProfile(ctx context.Context, id pgtype.UUID) (UserProfile, error)
 	GetUserProfileByUsername(ctx context.Context, username pgtype.Text) (UserProfile, error)

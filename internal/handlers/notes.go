@@ -36,18 +36,16 @@ func NewNotesHandler(db *pgxpool.Pool, embeddingService *services.EmbeddingServi
 
 // CreateNoteRequest represents the request body for creating a note
 type CreateNoteRequest struct {
-	Title    string   `json:"title" binding:"required"`
-	Content  string   `json:"content" binding:"required"`
-	Tags     []string `json:"tags,omitempty"`
-	IsPublic bool     `json:"is_public,omitempty"`
+	Title   string   `json:"title" binding:"required"`
+	Content string   `json:"content" binding:"required"`
+	Tags    []string `json:"tags,omitempty"`
 }
 
 // UpdateNoteRequest represents the request body for updating a note
 type UpdateNoteRequest struct {
-	Title    *string  `json:"title,omitempty"`
-	Content  *string  `json:"content,omitempty"`
-	Tags     []string `json:"tags,omitempty"`
-	IsPublic *bool    `json:"is_public,omitempty"`
+	Title   *string  `json:"title,omitempty"`
+	Content *string  `json:"content,omitempty"`
+	Tags    []string `json:"tags,omitempty"`
 }
 
 // NoteResponse represents the response format for notes
@@ -57,7 +55,6 @@ type NoteResponse struct {
 	Title     string   `json:"title"`
 	Content   string   `json:"content"`
 	Tags      []string `json:"tags"`
-	IsPublic  bool     `json:"is_public"`
 	CreatedAt string   `json:"created_at"`
 	UpdatedAt string   `json:"updated_at"`
 }
@@ -100,7 +97,6 @@ func (h *NotesHandler) CreateNote(c *gin.Context) {
 		Content:   req.Content,
 		Embedding: embeddingVector,
 		Tags:      req.Tags,
-		IsPublic:  pgtype.Bool{Bool: req.IsPublic, Valid: true},
 	}
 
 	// Create the note
@@ -138,7 +134,7 @@ func (h *NotesHandler) GetNote(c *gin.Context) {
 
 	// Check if user can access this note
 	userID, authenticated := auth.GetUserID(c)
-	if !note.IsPublic.Bool && (!authenticated || userID != note.UserID.String()) {
+	if !authenticated || userID != note.UserID.String() {
 		c.JSON(http.StatusForbidden, gin.H{"error": "Access denied"})
 		return
 	}
@@ -266,10 +262,6 @@ func (h *NotesHandler) UpdateNote(c *gin.Context) {
 	if req.Tags != nil {
 		params.Tags = req.Tags
 	}
-	if req.IsPublic != nil {
-		params.IsPublic.Bool = *req.IsPublic
-		params.IsPublic.Valid = true
-	}
 
 	// Generate new embedding if title or content changed
 	if needsEmbeddingUpdate {
@@ -330,45 +322,6 @@ func (h *NotesHandler) DeleteNote(c *gin.Context) {
 	c.JSON(http.StatusNoContent, nil)
 }
 
-// GetPublicNotes handles GET /api/notes/public
-func (h *NotesHandler) GetPublicNotes(c *gin.Context) {
-	// Parse query parameters
-	limitStr := c.DefaultQuery("limit", "10")
-	offsetStr := c.DefaultQuery("offset", "0")
-
-	limit, err := strconv.Atoi(limitStr)
-	if err != nil || limit < 1 || limit > 100 {
-		limit = 10
-	}
-
-	offset, err := strconv.Atoi(offsetStr)
-	if err != nil || offset < 0 {
-		offset = 0
-	}
-
-	// Get public notes
-	notes, err := h.queries.GetPublicNotes(c.Request.Context(), db_sqlc.GetPublicNotesParams{
-		Limit:  int32(limit),
-		Offset: int32(offset),
-	})
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch public notes"})
-		return
-	}
-
-	var responses []NoteResponse
-	for _, note := range notes {
-		responses = append(responses, convertGetPublicNotesRowToResponse(note))
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"notes":  responses,
-		"limit":  limit,
-		"offset": offset,
-		"count":  len(responses),
-	})
-}
-
 // convertCreateNoteRowToResponse converts CreateNoteRow to API response format
 func convertCreateNoteRowToResponse(note db_sqlc.CreateNoteRow) NoteResponse {
 	return NoteResponse{
@@ -377,7 +330,6 @@ func convertCreateNoteRowToResponse(note db_sqlc.CreateNoteRow) NoteResponse {
 		Title:     note.Title,
 		Content:   note.Content,
 		Tags:      note.Tags,
-		IsPublic:  note.IsPublic.Bool,
 		CreatedAt: note.CreatedAt.Time.Format("2006-01-02T15:04:05Z07:00"),
 		UpdatedAt: note.UpdatedAt.Time.Format("2006-01-02T15:04:05Z07:00"),
 	}
@@ -391,7 +343,6 @@ func convertGetNoteRowToResponse(note db_sqlc.GetNoteRow) NoteResponse {
 		Title:     note.Title,
 		Content:   note.Content,
 		Tags:      note.Tags,
-		IsPublic:  note.IsPublic.Bool,
 		CreatedAt: note.CreatedAt.Time.Format("2006-01-02T15:04:05Z07:00"),
 		UpdatedAt: note.UpdatedAt.Time.Format("2006-01-02T15:04:05Z07:00"),
 	}
@@ -405,7 +356,6 @@ func convertGetUserNotesRowToResponse(note db_sqlc.GetUserNotesRow) NoteResponse
 		Title:     note.Title,
 		Content:   note.Content,
 		Tags:      note.Tags,
-		IsPublic:  note.IsPublic.Bool,
 		CreatedAt: note.CreatedAt.Time.Format("2006-01-02T15:04:05Z07:00"),
 		UpdatedAt: note.UpdatedAt.Time.Format("2006-01-02T15:04:05Z07:00"),
 	}
@@ -419,21 +369,6 @@ func convertUpdateNoteRowToResponse(note db_sqlc.UpdateNoteRow) NoteResponse {
 		Title:     note.Title,
 		Content:   note.Content,
 		Tags:      note.Tags,
-		IsPublic:  note.IsPublic.Bool,
-		CreatedAt: note.CreatedAt.Time.Format("2006-01-02T15:04:05Z07:00"),
-		UpdatedAt: note.UpdatedAt.Time.Format("2006-01-02T15:04:05Z07:00"),
-	}
-}
-
-// convertGetPublicNotesRowToResponse converts GetPublicNotesRow to API response format
-func convertGetPublicNotesRowToResponse(note db_sqlc.GetPublicNotesRow) NoteResponse {
-	return NoteResponse{
-		ID:        note.ID.String(),
-		UserID:    note.UserID.String(),
-		Title:     note.Title,
-		Content:   note.Content,
-		Tags:      note.Tags,
-		IsPublic:  note.IsPublic.Bool,
 		CreatedAt: note.CreatedAt.Time.Format("2006-01-02T15:04:05Z07:00"),
 		UpdatedAt: note.UpdatedAt.Time.Format("2006-01-02T15:04:05Z07:00"),
 	}
@@ -515,7 +450,6 @@ func (h *NotesHandler) SearchNotesByQuery(c *gin.Context) {
 			"title":      note.Title,
 			"content":    note.Content,
 			"tags":       note.Tags,
-			"is_public":  note.IsPublic.Bool,
 			"created_at": note.CreatedAt.Time.Format("2006-01-02T15:04:05Z07:00"),
 			"updated_at": note.UpdatedAt.Time.Format("2006-01-02T15:04:05Z07:00"),
 			"similarity": note.Similarity,

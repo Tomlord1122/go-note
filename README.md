@@ -13,7 +13,7 @@ Go-Note is a powerful backend API for note-taking applications that combines tra
 - **📝 Note Management** - Create, read, update, and delete notes with tagging
 - **🔍 AI-Powered Search** - Semantic search using Google embeddings and vector similarity
 - **🎯 Smart Flashcards** - Auto-generate study flashcards from your notes or queries
-- **🌐 Public/Private Notes** - Share notes publicly or keep them private
+- **🔐 Private Notes** - Secure personal note storage
 - **⚡ Real-time Streaming** - Server-sent events for flashcard generation
 - **🔒 Row-Level Security** - Database-level security with Supabase RLS policies
 
@@ -38,14 +38,13 @@ Go-Note is a powerful backend API for note-taking applications that combines tra
 - `GET /api/users/profile` - Get user profile
 - `POST /api/users/profile` - Create user profile
 - `PUT /api/users/profile` - Update user profile
-- `GET /api/users/:username` - Get public user profile
+- `GET /api/users/:username` - Get user profile
 
 ### Notes
 - `GET /api/notes` - Get user's notes
 - `POST /api/notes` - Create new note
 - `PUT /api/notes/:id` - Update note
 - `DELETE /api/notes/:id` - Delete note
-- `GET /api/notes/public` - Get public notes
 - `POST /api/notes/search` - Semantic search through notes
 
 ### AI Features
